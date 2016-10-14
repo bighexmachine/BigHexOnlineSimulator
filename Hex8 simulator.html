@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- saved from url=(0048)https://www.cs.bris.ac.uk/~bernhard/sim/hex.html -->
 <html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
-    <title>Hex8 simulator</title>
+    <title>Wallcomp 16bit simulator</title>
     <link rel="stylesheet" type="text/css" href="./Hex8 simulator_files/bulma.css">
     <link rel="stylesheet" type="text/css" href="./Hex8 simulator_files/hex.css">
     <script type="text/javascript" src="./Hex8 simulator_files/jquery-3.1.0.js.download"></script>
@@ -63,9 +63,10 @@
 
     <p id="is_running">Not running.</p>
     <br>
-    <input type="button" class="button is-danger" value="Reset" id="reset">
+    <input type="button" class="button is-info" value="Reset" id="reset">
     <input type="button" class="button is-warning" value="Step" id="step" disabled="disabled">
     <input type="button" class="button is-success" value="Run" id="run" disabled="disabled">
+    <input type="button" class="button is-danger" value="Stop" id="stop" disabled="disabled">
     <br>
     <br>
     <label class="label">Delay</label>
@@ -107,6 +108,18 @@
 
         </div>
     </div>
+
+    <div class="tile is-parent">
+        <div class="tile is-child box">
+
+        <p class="title">Assembly Editor
+        <input type="button" class="button is-success" id="assemble" value="Assemble">
+        </p>
+        <textarea cols="79" rows="32" id="assembly_editor" x-webkit-speech=""></textarea>
+
+        </div>
+    </div>
+
 </div>
 
 </section>

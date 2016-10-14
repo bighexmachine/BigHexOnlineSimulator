@@ -1,6 +1,5 @@
-/*
- * scripts for Hex8 emulator/debugger
- */
+
+var sizeOfMem = 0x800;
 
 function assert(a) {
     if (!a) {
@@ -24,12 +23,16 @@ var HEX = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D',
 
 
 function hex_byte(i) {
-    assert(is_byte(i));
+    if (is_byte(i) == false){
+      throw i + " is not 8 bit number";
+    }
     return HEX[i >> 4] + HEX[i % 16];
 }
 
 function hex_16bit(i) {
-    assert(is_16bit(i));
+    if (is_16bit(i) == false){
+      throw i + " is not 16 bit number";
+    }
     return HEX[(i>>12)%16] + HEX[(i>>8)%16] + HEX[(i>>4)%16] + HEX[i % 16];
 }
 
@@ -47,7 +50,7 @@ function init_model(m) {
     m.registers.b = 0;
     m.registers.p = 0;
     m.registers.o = 0;
-    for (var i = 0; i < 0x10000; i++) {
+    for (var i = 0; i < sizeOfMem; i++) {
         m.memory[i] = 0;
     }
 }
@@ -56,6 +59,8 @@ function init_model(m) {
 
 var reg_observers = [];
 var mem_observers = [];
+
+var bps = [];
 
 // read or write a register. Write fires off a changed event.
 function reg(n, v) {
@@ -107,15 +112,15 @@ function mem2(addr) {
 
 // Update entire memory from buffer.
 function mem_update(buf) {
-    assert(buf.length <= 0x7FFF);
+    assert(buf.length <= 0x8000);
     for (var index = 0; index < buf.length; index++) {
         model.memory[index] = buf[index];
     }
-    for (var index = buf.length; index < 0x7FFF; index++) {
+    for (var index = buf.length; index < 0x8000; index++) {
         model.memory[index] = 0;
     }
     for (var index = 0; index < mem_observers.length; index++) {
-        (mem_observers[index])("reload");
+        (mem_observers[index])("reload", buf.length);
     }
 }
 
@@ -160,10 +165,11 @@ function update_mem_view(rw, addr, a, b) {
     if (rw == "r") {
         $(cellname).addClass("r1");
     } else if (rw == "w") {
-        $(cellname).html(hex_byte(mem2(addr)));
+        $(cellname).html(hex_16bit(mem2(addr)));
         $(cellname).addClass("w1");
     } else if (rw == "reload") {
-        for (var i = 0; i < 16; i++) {
+        var rows = addr/16;
+        for (var i = 0; i < rows; i++) {
             for (var j = 0; j < 16; j++) {
                 var cell = $("#mem_" + i + "_" + j);
                 cell.html(hex_16bit(mem2(16*i+j)));
@@ -180,7 +186,7 @@ function init_disassembly_view() {
     var content = document.createElement("table");
     content.className = "dis_table";
 
-    for (var i = 0; i < 0x100; i++) {
+    for (var i = 0; i < sizeOfMem; i++) {
         var row = document.createElement("tr");
         var heading = document.createElement("td");
         heading.className = "row_header";
@@ -229,7 +235,7 @@ function init_memory_view() {
         top_row.appendChild(h);
     }
     content.appendChild(top_row);
-    for (var row = 0; row < 0xFF; row++) {
+    for (var row = 0; row < sizeOfMem>>4; row++) {
         var theRow = document.createElement("tr");
         var row_header = document.createElement("td");
         row_header.className = "row_header";
@@ -262,12 +268,19 @@ function update_disassembly_view(rw, addr, a, b) {
     if (rw == "r") {
         // nothing to do
     } else if (rw == "w") {
-        // update cell
-        $("#dis_h_" + addr).html(hex_byte(b));
-        $("#dis_d_" + addr).html(disassemble(b));
+        // update cells in 16bit region
+        var addr_low = addr>>1;
+        var val_low = b&0xFF;
+        $("#dis_h_" + addr_low).html(hex_byte(val_low));
+        $("#dis_d_" + addr_low).html(disassemble(val_low));
+        var addr_hi = addr_low + 1;
+        var val_hi = (b>>8)&0xFF;
+        $("#dis_h_" + addr_hi).html(hex_byte(val_hi));
+        $("#dis_d_" + addr_hi).html(disassemble(val_hi));
     } else if (rw == "reload") {
         // update all
-        for (var i = 0; i < 0x100; i++) {
+        var insts = addr << 1;
+        for (var i = 0; i < insts; i++) {
           var wholeWord = mem2(i>>1);
           var inst;
           if (i%2==1) {
@@ -284,7 +297,7 @@ function update_disassembly_view(rw, addr, a, b) {
 // Copy memory to editor and switch to it.
 function switch_to_editor() {
     var memstring = "";
-    for (var i = 0; i < 0xFFF; i++) {
+    for (var i = 0; i < sizeOfMem; i++) {
         var b = hex_16bit(mem2(i));
         memstring += b;
         memstring += " ";
@@ -327,8 +340,8 @@ function memedit_accept() {
             if (indexWithin > 3) {
               buf[i] = val;
               i++;
-              if (i > 0x1000) {
-                  reportError("Overflow, max. 0x100 bytes.");
+              if (i > sizeOfMem) {
+                  reportError("Overflow, max. 0x8000 bytes.");
                   return;
               }
               val = 0;
@@ -351,6 +364,418 @@ function memedit_cancel() {
     $("#editmem").hide();
 }
 
+function assemble() {
+  var assembly = $("#assembly_editor").val()+"\n";
+  insts = convertToList(assembly);
+
+  //set up length of instructions with static length
+  for (var i in insts) {
+    var inst = insts[i];
+    switch(inst.inst) {
+      case "DATA":
+        inst.len = 2;
+        break;
+      case "LDAI":
+      case "LDBI":
+      case "STAI":
+      case "BRB":
+        var num = parseInt(inst.opr);
+        if(num < -256) {inst.len = 4;}
+        else if (num < 0) {inst.len = 2;}
+        else if (num < 0x10) {inst.len = 1;}
+        else if (num < 0x100) {inst.len = 2;}
+        else if (num < 0x1000) {inst.len = 2;}
+        else if (num < 0x8000) {inst.len = 3;}
+        else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");}
+        break;
+      case "OPR":
+        inst.len = 1;
+        break;
+      case "LDAM":
+      case "LDBM":
+      case "STAM":
+      case "LDAC":
+      case "LDBC":
+      case "BR":
+      case "BRZ":
+      case "BRN":
+      case "LDAP":
+        var num = parseInt(inst.opr)
+        if (isNaN(num)) {
+          inst.len = 1;
+        } else {
+          if(num < -256) {inst.len = 4;}
+          else if (num < 0) {inst.len = 2;}
+          else if (num < 0x10) {inst.len = 1;}
+          else if (num < 0x100) {inst.len = 2;}
+          else if (num < 0x1000) {inst.len = 2;}
+          else if (num < 0x8000) {inst.len = 3;}
+          else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");}
+        }
+        break;
+    }
+  }
+
+  var labelpos = new Map();
+  //interatively examine each jump to check if it can reach.
+  var running = true;
+  while(running) {
+    running = false;
+    rescanLabels(labelpos, insts);
+    var count = 0;
+    for (var i in insts) {
+      var inst = insts[i];
+      if (inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ||  inst.inst == "BR" || inst.inst == "BRZ" || inst.inst == "BRN" || inst.inst == "LDAP" ) {
+        if ( isNaN(parseInt(inst.opr)) ){
+          var dest = labelpos.get(inst.opr);
+          if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
+            var opr_val = dest/2;
+          } else {
+            var opr_val = ( dest - count ) - 1;
+          }
+          if (opr_val < -256) {
+            if (inst.len != 4){
+              inst.len = 4;
+              running = true;
+              break;
+            }
+          } else if (opr_val < 0) {
+            if (inst.len != 2){
+              inst.len = 2;
+              running = true;
+              break;
+            }
+          } else if (opr_val < 0x10) {
+            if (inst.len != 1){
+              inst.len = 1;
+              running = true;
+              break;
+            }
+          } else if (opr_val < 0x100) {
+            if (inst.len != 2){
+              inst.len = 2;
+              running = true;
+              break;
+            }
+          } else if (opr_val < 0x1000) {
+            if (inst.len != 3){
+              inst.len = 3;
+              running = true;
+              break;
+            }
+          } else if (opr_val < 0x8000) {
+            if (inst.len != 4){
+              inst.len = 4;
+              running = true;
+              break;
+            }
+          } else {
+            reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
+            running = false;
+            break;
+          }
+        }
+      } else if(inst.inst == "DATA") {
+        //data needs to be in a 2 byte multiple so if it is not then padding is needed
+        if(count % 2 != 0) {
+          insts.splice(i, 0, {inst: "PADDING", len: 1})
+          running = true;
+          break;
+        }
+      }
+      count += inst.len;
+    }
+  }
+
+  m_insts = []
+  //sub in jump values
+  var count = 0;
+  for (var i in insts) {
+    var inst = insts[i];
+    if (inst.inst == "DATA") {
+      var val = parseInt(inst.opr);
+      var m_inst_low = {inst: "DATA", opr: val&0xFF};
+      var m_inst_hi = {inst: "DATA", opr: (val>>8)&0xFF};
+      m_insts.push(m_inst_low);
+      m_insts.push(m_inst_hi);
+    } else if (inst.inst == "PADDING") {
+      m_insts.push({inst: "PADDING"})
+    } else {
+      if (inst.inst == "OPR") {
+        if (inst.opr == "ADD") {
+          var opr_val = 0;
+        } else if (inst.opr == "SUB") {
+          var opr_val = 1;
+        } else if (!isNaN(parseInt(inst.opr))) {
+          var opr_val = parseInt(inst.opr);
+        } else {
+          reportError("Error with "+ inst.inst + " " + inst.opr+ ". Unsupported Operand for OPR. Try ADD, SUB or a number.");
+        }
+      } else if (inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ||  inst.inst == "BR" || inst.inst == "BRZ" || inst.inst == "BRN" || inst.inst == "LDAP" ) {
+        if ( isNaN(parseInt(inst.opr)) ){
+          var dest = labelpos.get(inst.opr);
+          if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
+            var opr_val = dest/2;
+          } else {
+            var opr_val = ( dest - count ) - 1;
+          }
+        } else {
+          var opr_val = parseInt(inst.opr);
+        }
+      } else {
+        if ( isNaN(parseInt(inst.opr)) ){
+          reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand should be a number.");
+        } else {
+          var opr_val = parseInt(inst.opr);
+        }
+      }
+      if(opr_val < -0x8000) {
+        reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
+        break;
+      } else if (opr_val < -256) {
+        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>12)&0xF)}
+        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
+        var m_inst_pfix3 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
+        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
+        m_insts.push(m_inst_pfix1);
+        m_insts.push(m_inst_pfix2);
+        m_insts.push(m_inst_pfix3);
+        m_insts.push(m_inst);
+      } else if (opr_val < 0) {
+        var m_inst_nfix = {inst: "NFIX", opr: ((opr_val>>4)&0xF)};
+        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
+        m_insts.push(m_inst_nfix);
+        m_insts.push(m_inst);
+      } else if (opr_val < 0x10) {
+        var m_inst = {inst: inst.inst, opr: opr_val};
+        m_insts.push(m_inst);
+      } else if (opr_val < 0x100) {
+        var m_inst_pfix = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
+        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
+        m_insts.push(m_inst_pfix);
+        m_insts.push(m_inst);
+      } else if (opr_val < 0x1000) {
+        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
+        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
+        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
+        m_insts.push(m_inst_pfix1);
+        m_insts.push(m_inst_pfix2);
+        m_insts.push(m_inst);
+      } else if (opr_val < 0x8000) {
+        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>12)&0xF)}
+        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
+        var m_inst_pfix3 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
+        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
+        m_insts.push(m_inst_pfix1);
+        m_insts.push(m_inst_pfix2);
+        m_insts.push(m_inst_pfix3);
+        m_insts.push(m_inst);
+      } else {
+        reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
+        break;
+      }
+    }
+    count += inst.len;
+  }
+
+
+
+  var memstring = "";
+  var i;
+  for (i = 0; i < m_insts.length-1; i += 2) {
+    var m_inst_low = m_insts[i];
+    var m_inst_hi = m_insts[i+1];
+    var byte_low = getByteCode(m_inst_low);
+    var byte_hi = getByteCode(m_inst_hi);
+    var word = byte_low + (byte_hi<<8);
+    memstring += hex_16bit(word);
+    memstring += " ";
+    if ((i % 32 == 31)) {
+        memstring += "\n";
+    }
+  }
+  var num_words = i>>1;
+  if (m_insts.length % 2 == 1) {
+    var m_inst_low = m_insts[i];
+    var byte_low = getByteCode(m_inst_low);
+    var word = byte_low;
+    memstring += hex_16bit(word);
+    memstring += " ";
+    num_words++;
+  }
+
+  for (; num_words < sizeOfMem; num_words++){
+    memstring += "0000 ";
+    if ((num_words % 16 == 15)) {
+        memstring += "\n";
+    }
+  }
+
+  $("#memory_editor").val(memstring);
+
+}
+
+function getByteCode(inst) {
+  switch(inst.inst) {
+    case "PADDING":
+      return 0;
+      break;
+    case "DATA":
+      return inst.opr;
+      break;
+    case "LDAM":
+      return (0<<4) + inst.opr;
+      break;
+    case "LDBM":
+      return (1<<4) + inst.opr;
+      break;
+    case "STAM":
+      return (2<<4) + inst.opr;
+      break;
+    case "LDAC":
+      return (3<<4) + inst.opr;
+      break;
+    case "LDBC":
+      return (4<<4) + inst.opr;
+      break;
+    case "LDAP":
+      return (5<<4) + inst.opr;
+        break;
+    case "LDAI":
+      return (6<<4) + inst.opr;
+      break;
+    case "LDBI":
+      return (7<<4) + inst.opr;
+      break;
+    case "STAI":
+      return (8<<4) + inst.opr;
+      break;
+    case "BR":
+      return (9<<4) + inst.opr;
+      break;
+    case "BRZ":
+      return (10<<4) + inst.opr;
+      break;
+    case "BRN":
+      return (11<<4) + inst.opr;
+      break;
+    case "BRB":
+      return (12<<4) + inst.opr;
+      break;
+    case "OPR":
+      return (13<<4) + inst.opr;
+      break;
+    case "PFIX":
+      return (14<<4) + inst.opr;
+      break;
+    case "NFIX":
+      return (15<<4) + inst.opr;
+      break;
+  }
+}
+
+function rescanLabels(labelpos, insts) {
+  var count = 0;
+  for (var i in insts) {
+    var inst = insts[i]
+    for (var j in inst.labels) {
+      labelpos.set(inst.labels[j], count);
+    }
+    count += inst.len;
+  }
+}
+
+function convertToList(assembly) {
+  var insts = [];
+  var line = 0;
+  var i = 0;
+  while (i < assembly.length) {
+    inst = {};
+    var ch = assembly[i];
+    if (ch == '\n') {
+      i++;
+      line++;
+    } else if (ch == 'L') {
+
+      inst.labels = [];
+      while (ch == 'L') {
+        var labelString = "";
+        labelString += ch;
+        i++;
+        ch = assembly[i];
+        while (ch != '\n') {
+          labelString += ch;
+          i++;
+          ch = assembly[i];
+        }
+        line++;
+        i++;
+        ch = assembly[i];
+        inst.labels.push(labelString);
+      }
+      while ( ch == ' ') {
+        i++;
+        ch = assembly[i];
+      }
+      var instString = "";
+      while( ch != ' ') {
+        instString += ch;
+        i++;
+        ch = assembly[i];
+      }
+      inst.inst = instString;
+      while ( ch == ' ') {
+        i++;
+        ch = assembly[i];
+      }
+      var oprString = "";
+      while( ch != '\n' ) {
+        oprString += ch;
+        i++;
+        ch = assembly[i];
+      }
+      inst.opr = oprString;
+      insts.push(inst);
+      i++;
+      line++;
+    } else if (ch == ' ') {
+      inst.labels = []
+      i++;
+      ch = assembly[i];
+      while ( ch == ' ') {
+        i++;
+        ch = assembly[i];
+      }
+      var instString = "";
+      while( ch != ' ') {
+        instString += ch;
+        i++;
+        ch = assembly[i];
+      }
+      inst.inst = instString;
+      while ( ch == ' ') {
+        i++;
+        ch = assembly[i];
+      }
+      var oprString = "";
+      while( ch != '\n' ) {
+        oprString += ch;
+        i++;
+        ch = assembly[i];
+      }
+      inst.opr = oprString;
+      insts.push(inst);
+      i++;
+      line++;
+    } else {
+      reportError("Error on line "+ line +".");
+      return null;
+    }
+  }
+  return insts;
+}
+
+
 // current delay.
 function get_delay() {
     var delay = $("#delay").val();
@@ -370,8 +795,9 @@ function get_delay() {
 function update_pc(n, v) {
     if (n == "p") {
         $("#disassembly").find('.dis_cell').removeClass('current_pc');
-        if (is_running()) {
-            $("#dis_d_" + v).addClass('current_pc');
+        $("#dis_d_" + v).addClass('current_pc');
+        if ($("#disassembly").scrollTop() > v*24 || $("#disassembly").scrollTop() + $("#disassembly").height() < v*24) {
+          $("#disassembly").scrollTop((v-1)*24);
         }
     } else if (n == "run") {
         if (v) {
@@ -385,13 +811,13 @@ function update_pc(n, v) {
 
 // return the current breakpoints.
 function breakpoints() {
-    var breaks = [];
-    for (var i = 0; i < 256; i++) {
+    for (var i = 0; i < 0x8000; i++) {
         if($("#dis_b_" + i).is(':checked')) {
-            breaks[i] = 1;
+            bps[i] = 1;
+        } else {
+          bps[i] = 0;
         }
     }
-    return breaks;
 }
 
 /* emulator */
@@ -432,26 +858,20 @@ function is_running() {
 }
 
 function reset() {
+    hlt();
     rp(0); ra(0); rb(0); ro(0);
-    model.running = 1;
-    for (var i = 0; i < reg_observers.length; i++) {
-        (reg_observers[i])("run", 1);
-    }
+
 }
 
 // halt the simulation.
 function hlt() {
     model.running = 0;
-    for (var i = 0; i < reg_observers.length; i++) {
-        (reg_observers[i])("run", 0);
-    }
+    $("#stop").attr('disabled', true);
+    $("#run").attr('disabled', false);
+    $("#step").attr('disabled', false);
 }
 
 function step() {
-    if (!model.running) {
-
-        return;
-    }
 
     var pc = rp();
     if (pc%2==0) {
@@ -490,15 +910,12 @@ function disassemble(inst) {
 
 function run() {
     if (is_running()) {
-        var bps = breakpoints();
-
-        // TODO speed
-        // TODO way to interrupt
-        step();
-        if (bps[rp()]) {
-            return;
-        }
-        setTimeout(run, get_delay());
+      step();
+      if (bps[rp()]) {
+          hlt();
+          return;
+      }
+      setTimeout(run, get_delay());
     }
 }
 
@@ -535,18 +952,28 @@ $(function(){
 
     reg_observers.push(update_registers);
     reg_observers.push(update_pc);
-    reg_observers.push(update_control);
 
+    reset();
     $("#reset").click(reset);
     $("#step").click(step);
-    $("#run").click(run);
-    update_control("run", 0);
+    $("#run").click(
+      function() {
+        $("#run").attr('disabled', true );
+        $("#step").attr('disabled', true);
+        $("#stop").attr('disabled', false);
+        model.running = 1;
+        breakpoints();
+        run();
+      }
+    );
+    $("#stop").click(hlt);
 
     $("#load").click(switch_to_editor);
     $("#editmem").hide();
 
     $("#edityes").click(memedit_accept);
     $("#editno").click(memedit_cancel);
+    $("#assemble").click(assemble);
 
     $("#messages").hide();
     $("#clearmessage").click(function() {$("#messages").hide()});
