@@ -704,6 +704,7 @@ function convertToList(assembly) {
         i++;
         ch = assembly[i];
         while (ch != '\n') {
+          if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");}
           labelString += ch;
           i++;
           ch = assembly[i];
