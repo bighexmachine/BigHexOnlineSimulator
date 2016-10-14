@@ -31,29 +31,29 @@ or
 
 The instructions are as follows taken from the machine code specification.
 
-LDAM: areg ← mem[oreg] load from memory
-LDBM: breg ← mem[oreg] load from memory
-STAM: mem[oreg] ← areg store to memory
+LDAM: areg <- mem[oreg] load from memory
+LDBM: breg <- mem[oreg] load from memory
+STAM: mem[oreg] <- areg store to memory
 
 Access to constants and program addresses is provided by instructions which either
 load values directly or enable them to be loaded from a location in the program:
-LDAC: areg ← oreg load constant
-LDBC: breg ← oreg load constant
-LDAP: areg ← pc + oreg load address in program
+LDAC: areg <- oreg load constant
+LDBC: breg <- oreg load constant
+LDAP: areg <- pc + oreg load address in program
 
 Access to data structures is provided by instructions which combine an address
 with an offset:
-LDAI: areg ← mem[areg + oreg] load from memory
-LDBI: breg ← mem[breg + oreg] load from memory
-STAI: mem[breg + oreg] ← areg store to memory
+LDAI: areg <- mem[areg + oreg] load from memory
+LDBI: breg <- mem[breg + oreg] load from memory
+STAI: mem[breg + oreg] <- areg store to memory
 
 Branching, jumping and calling
 The branch instructions include conditional and unconditional relative branches.
 A branch using an offset in the stack is provided to support jump tables.
-BR: pc ← pc + oreg branch relative unconditional
+BR: pc <- pc + oreg branch relative unconditional
 BRZ: if areg = 0 then pc ← pc + oreg branch relative zero
 BRN: if areg < 0 then pc ← pc + oreg branch relative negative
-BRB: pc ← breg branch absolute
+BRB: pc <- breg branch absolute
 
 ----
 
