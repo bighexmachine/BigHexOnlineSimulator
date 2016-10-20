@@ -1,9 +1,9 @@
-## Wallcomp Assembly Specification##
+###Wallcomp Assembly Specification
 
 Designed to be very close to machine code with the assembler only really handling the layout of instructions and data in memory.
 Also to make it simpler to write the assembler isn't that flexible in terms of syntax.
 
-#Labels#
+##Labels
 
 Labels go on their own line and label the next line which is an instruction.
 
@@ -14,7 +14,11 @@ then a new line
 
 You can define more than one label on consecutive lines and they will be given the same value.
 
-#Instructions#
+Eg.
+Linit
+Lloop
+
+##Instructions
 
 All instructions like the machine's instructions have 1 operand.
 
@@ -55,10 +59,22 @@ BRZ: if areg = 0 then pc ← pc + oreg branch relative zero
 BRN: if areg < 0 then pc ← pc + oreg branch relative negative
 BRB: pc <- breg branch absolute
 
+Inter-register operandless Instruction: OPR
+OPR ADD: areg <- areg + breg add the registers values
+OPR SUB: areg <- areg - breg subtract the registers values
+
 ----
 
-Slightly differently, to define a data word to be stored to memory.
-DATA {16 bit number written in base 10}
+#Operands
+Operands can be written as either:
+ - decimal format with negative value being prefixed by a '-' sign.
+ - unsigned hexadecimal format prefixed by '0x' to indicate this.
+ - the ORP command's sub instruction can be written by using the mnemonic ADD and SUB.
+
+----
+
+Slightly differently, to define a data word (16bits) to be stored to memory.
+DATA {initial value of the 16bit word}
 
 It is suggested you label this word with a label and refer to it using that since the assembler might move it (for example to align it to fit in 1 16 bit word).
 
@@ -74,6 +90,10 @@ The first 5 follow the previous definitions with labels.
 
 But BR, BRZ, BRN, LDAP do a little extra. As you would expect the assembler calculates the relative jump to the specified label and uses that in the machine code.
 
-#Notes#
+##Comments
+any line that starts with '-' will be ignored so can be used for comments
+
+##Notes
 
 The assembler doesn't like trailing white-space.
+BR -1 probably won't do what you think since the negative value needs an extra instruction to produce it. (So should use -2)

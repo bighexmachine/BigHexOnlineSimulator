@@ -365,6 +365,7 @@ function memedit_cancel() {
 }
 
 function assemble() {
+  clearError();
   var assembly = $("#assembly_editor").val()+"\n";
   insts = convertToList(assembly);
 
@@ -386,7 +387,7 @@ function assemble() {
         else if (num < 0x100) {inst.len = 2;}
         else if (num < 0x1000) {inst.len = 2;}
         else if (num < 0x8000) {inst.len = 3;}
-        else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");}
+        else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");return;}
         break;
       case "OPR":
         inst.len = 1;
@@ -410,13 +411,13 @@ function assemble() {
           else if (num < 0x100) {inst.len = 2;}
           else if (num < 0x1000) {inst.len = 2;}
           else if (num < 0x8000) {inst.len = 3;}
-          else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");}
+          else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");return;}
         }
         break;
     }
   }
 
-  var labelpos = new Map();
+  labelpos = new Map();
   //interatively examine each jump to check if it can reach.
   var running = true;
   while(running) {
@@ -432,6 +433,7 @@ function assemble() {
             var opr_val = dest/2;
           } else {
             var opr_val = ( dest - count ) - 1;
+            if (opr_val<0) opr_val -= (inst.len - 1);
           }
           if (opr_val < -256) {
             if (inst.len != 4){
@@ -510,6 +512,7 @@ function assemble() {
           var opr_val = parseInt(inst.opr);
         } else {
           reportError("Error with "+ inst.inst + " " + inst.opr+ ". Unsupported Operand for OPR. Try ADD, SUB or a number.");
+          return;
         }
       } else if (inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ||  inst.inst == "BR" || inst.inst == "BRZ" || inst.inst == "BRN" || inst.inst == "LDAP" ) {
         if ( isNaN(parseInt(inst.opr)) ){
@@ -518,6 +521,7 @@ function assemble() {
             var opr_val = dest/2;
           } else {
             var opr_val = ( dest - count ) - 1;
+            if (opr_val<0) opr_val -= (inst.len - 1);
           }
         } else {
           var opr_val = parseInt(inst.opr);
@@ -525,13 +529,14 @@ function assemble() {
       } else {
         if ( isNaN(parseInt(inst.opr)) ){
           reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand should be a number.");
+          return;
         } else {
           var opr_val = parseInt(inst.opr);
         }
       }
       if(opr_val < -0x8000) {
         reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
-        break;
+        return;
       } else if (opr_val < -256) {
         var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>12)&0xF)}
         var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
@@ -572,7 +577,7 @@ function assemble() {
         m_insts.push(m_inst);
       } else {
         reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
-        break;
+        return;
       }
     }
     count += inst.len;
@@ -694,6 +699,17 @@ function convertToList(assembly) {
     var ch = assembly[i];
     if (ch == '\n') {
       i++;
+      ch = assembly[i];
+      line++;
+    } else if (ch == '-') {
+      i++;
+      ch = assembly[i];
+      while( ch != '\n' ) {
+        i++;
+        ch = assembly[i];
+      }
+      i++;
+      ch = assembly[i];
       line++;
     } else if (ch == 'L') {
 
@@ -704,7 +720,7 @@ function convertToList(assembly) {
         i++;
         ch = assembly[i];
         while (ch != '\n') {
-          if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");}
+          if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");return null;}
           labelString += ch;
           i++;
           ch = assembly[i];
@@ -735,6 +751,12 @@ function convertToList(assembly) {
         i++;
         ch = assembly[i];
       }
+      if (oprString[0] == '0' && oprString[1] == 'x') {
+        var tmp = parseInt(oprString);
+        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
+        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
+        oprString = String(tmp);
+      }
       inst.opr = oprString;
       insts.push(inst);
       i++;
@@ -763,6 +785,12 @@ function convertToList(assembly) {
         oprString += ch;
         i++;
         ch = assembly[i];
+      }
+      if (oprString[0] == '0' && oprString[1] == 'x') {
+        var tmp = parseInt(oprString);
+        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
+        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
+        oprString = String(tmp);
       }
       inst.opr = oprString;
       insts.push(inst);
