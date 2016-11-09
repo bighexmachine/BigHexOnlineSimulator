@@ -269,7 +269,7 @@ function update_disassembly_view(rw, addr, a, b) {
         // nothing to do
     } else if (rw == "w") {
         // update cells in 16bit region
-        var addr_low = addr>>1;
+        var addr_low = addr<<1;
         var val_low = b&0xFF;
         $("#dis_h_" + addr_low).html(hex_byte(val_low));
         $("#dis_d_" + addr_low).html(disassemble(val_low));
@@ -432,8 +432,7 @@ function assemble() {
           if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
             var opr_val = dest/2;
           } else {
-            var opr_val = ( dest - count ) - 1;
-            if (opr_val<0) opr_val -= (inst.len - 1);
+            var opr_val = ( dest - (count+inst.len-1) ) - 1;
           }
           if (opr_val < -256) {
             if (inst.len != 4){
@@ -520,8 +519,7 @@ function assemble() {
           if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
             var opr_val = dest/2;
           } else {
-            var opr_val = ( dest - count ) - 1;
-            if (opr_val<0) opr_val -= (inst.len - 1);
+            var opr_val = ( dest - (count+inst.len-1) ) - 1;
           }
         } else {
           var opr_val = parseInt(inst.opr);
@@ -821,7 +819,7 @@ function get_delay() {
 
 // Hit when a register updates. If it's the pc and we're running, highlight
 // the next instruction.
-function update_pc(n, v) {
+function update_disassembly_with_current_pc(n, v) {
     if (n == "p") {
         $("#disassembly").find('.dis_cell').removeClass('current_pc');
         $("#dis_d_" + v).addClass('current_pc');
@@ -904,9 +902,9 @@ function step() {
 
     var pc = rp();
     if (pc%2==0) {
-        var inst = mem(pc>>1) % 0x100;
+        var inst = mem2(pc>>1) % 0x100;
     } else {
-      var inst = (mem(pc>>1) >> 8) % 0x100;
+      var inst = (mem2(pc>>1) >> 8) % 0x100;
     }
     var opcode = (inst >> 4);
     var operand = inst % 16;
@@ -980,7 +978,7 @@ $(function(){
     });
 
     reg_observers.push(update_registers);
-    reg_observers.push(update_pc);
+    reg_observers.push(update_disassembly_with_current_pc);
 
     reset();
     $("#reset").click(reset);
