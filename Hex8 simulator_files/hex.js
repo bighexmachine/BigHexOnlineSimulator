@@ -364,443 +364,45 @@ function memedit_cancel() {
     $("#editmem").hide();
 }
 
-function assemble() {
-  clearError();
-  var assembly = $("#assembly_editor").val()+"\n";
-  insts = convertToList(assembly);
+function assembler_wrapper() {
+    clearError();
+    var assembly = $("#assembly_editor").val()+"\n";
+    m_insts = assemble(assembly, reportError);
 
-  //set up length of instructions with static length
-  for (var i in insts) {
-    var inst = insts[i];
-    switch(inst.inst) {
-      case "DATA":
-        inst.len = 2;
-        break;
-      case "LDAI":
-      case "LDBI":
-      case "STAI":
-      case "BRB":
-        var num = parseInt(inst.opr);
-        if(num < -256) {inst.len = 4;}
-        else if (num < 0) {inst.len = 2;}
-        else if (num < 0x10) {inst.len = 1;}
-        else if (num < 0x100) {inst.len = 2;}
-        else if (num < 0x1000) {inst.len = 2;}
-        else if (num < 0x8000) {inst.len = 3;}
-        else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");return;}
-        break;
-      case "OPR":
-        inst.len = 1;
-        break;
-      case "LDAM":
-      case "LDBM":
-      case "STAM":
-      case "LDAC":
-      case "LDBC":
-      case "BR":
-      case "BRZ":
-      case "BRN":
-      case "LDAP":
-        var num = parseInt(inst.opr)
-        if (isNaN(num)) {
-          inst.len = 1;
-        } else {
-          if(num < -256) {inst.len = 4;}
-          else if (num < 0) {inst.len = 2;}
-          else if (num < 0x10) {inst.len = 1;}
-          else if (num < 0x100) {inst.len = 2;}
-          else if (num < 0x1000) {inst.len = 2;}
-          else if (num < 0x8000) {inst.len = 3;}
-          else {reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand too large.");return;}
-        }
-        break;
-    }
-  }
-
-  labelpos = new Map();
-  //interatively examine each jump to check if it can reach.
-  var running = true;
-  while(running) {
-    running = false;
-    rescanLabels(labelpos, insts);
-    var count = 0;
-    for (var i in insts) {
-      var inst = insts[i];
-      if (inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ||  inst.inst == "BR" || inst.inst == "BRZ" || inst.inst == "BRN" || inst.inst == "LDAP" ) {
-        if ( isNaN(parseInt(inst.opr)) ){
-          var dest = labelpos.get(inst.opr);
-          if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
-            var opr_val = dest/2;
-          } else {
-            var opr_val = ( dest - (count+inst.len-1) ) - 1;
-          }
-          if (opr_val < -256) {
-            if (inst.len != 4){
-              inst.len = 4;
-              running = true;
-              break;
-            }
-          } else if (opr_val < 0) {
-            if (inst.len != 2){
-              inst.len = 2;
-              running = true;
-              break;
-            }
-          } else if (opr_val < 0x10) {
-            if (inst.len != 1){
-              inst.len = 1;
-              running = true;
-              break;
-            }
-          } else if (opr_val < 0x100) {
-            if (inst.len != 2){
-              inst.len = 2;
-              running = true;
-              break;
-            }
-          } else if (opr_val < 0x1000) {
-            if (inst.len != 3){
-              inst.len = 3;
-              running = true;
-              break;
-            }
-          } else if (opr_val < 0x8000) {
-            if (inst.len != 4){
-              inst.len = 4;
-              running = true;
-              break;
-            }
-          } else {
-            reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
-            running = false;
-            break;
-          }
-        }
-      } else if(inst.inst == "DATA") {
-        //data needs to be in a 2 byte multiple so if it is not then padding is needed
-        if(count % 2 != 0) {
-          insts.splice(i, 0, {inst: "PADDING", len: 1})
-          running = true;
-          break;
-        }
-      }
-      count += inst.len;
-    }
-  }
-
-  m_insts = []
-  //sub in jump values
-  var count = 0;
-  for (var i in insts) {
-    var inst = insts[i];
-    if (inst.inst == "DATA") {
-      var val = parseInt(inst.opr);
-      var m_inst_low = {inst: "DATA", opr: val&0xFF};
-      var m_inst_hi = {inst: "DATA", opr: (val>>8)&0xFF};
-      m_insts.push(m_inst_low);
-      m_insts.push(m_inst_hi);
-    } else if (inst.inst == "PADDING") {
-      m_insts.push({inst: "PADDING"})
-    } else {
-      if (inst.inst == "OPR") {
-        if (inst.opr == "ADD") {
-          var opr_val = 0;
-        } else if (inst.opr == "SUB") {
-          var opr_val = 1;
-        } else if (!isNaN(parseInt(inst.opr))) {
-          var opr_val = parseInt(inst.opr);
-        } else {
-          reportError("Error with "+ inst.inst + " " + inst.opr+ ". Unsupported Operand for OPR. Try ADD, SUB or a number.");
-          return;
-        }
-      } else if (inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ||  inst.inst == "BR" || inst.inst == "BRZ" || inst.inst == "BRN" || inst.inst == "LDAP" ) {
-        if ( isNaN(parseInt(inst.opr)) ){
-          var dest = labelpos.get(inst.opr);
-          if ( inst.inst == "LDAM" || inst.inst == "LDBM" || inst.inst == "STAM" || inst.inst == "LDAC" || inst.inst == "LDBC" ) {
-            var opr_val = dest/2;
-          } else {
-            var opr_val = ( dest - (count+inst.len-1) ) - 1;
-          }
-        } else {
-          var opr_val = parseInt(inst.opr);
-        }
-      } else {
-        if ( isNaN(parseInt(inst.opr)) ){
-          reportError("Error with "+ inst.inst + " " + inst.opr+ ". Operand should be a number.");
-          return;
-        } else {
-          var opr_val = parseInt(inst.opr);
-        }
-      }
-      if(opr_val < -0x8000) {
-        reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
-        return;
-      } else if (opr_val < -256) {
-        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>12)&0xF)}
-        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
-        var m_inst_pfix3 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
-        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
-        m_insts.push(m_inst_pfix1);
-        m_insts.push(m_inst_pfix2);
-        m_insts.push(m_inst_pfix3);
-        m_insts.push(m_inst);
-      } else if (opr_val < 0) {
-        var m_inst_nfix = {inst: "NFIX", opr: ((opr_val>>4)&0xF)};
-        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
-        m_insts.push(m_inst_nfix);
-        m_insts.push(m_inst);
-      } else if (opr_val < 0x10) {
-        var m_inst = {inst: inst.inst, opr: opr_val};
-        m_insts.push(m_inst);
-      } else if (opr_val < 0x100) {
-        var m_inst_pfix = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
-        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
-        m_insts.push(m_inst_pfix);
-        m_insts.push(m_inst);
-      } else if (opr_val < 0x1000) {
-        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
-        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
-        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
-        m_insts.push(m_inst_pfix1);
-        m_insts.push(m_inst_pfix2);
-        m_insts.push(m_inst);
-      } else if (opr_val < 0x8000) {
-        var m_inst_pfix1 = {inst: "PFIX", opr: ((opr_val>>12)&0xF)}
-        var m_inst_pfix2 = {inst: "PFIX", opr: ((opr_val>>8)&0xF)}
-        var m_inst_pfix3 = {inst: "PFIX", opr: ((opr_val>>4)&0xF)}
-        var m_inst = {inst: inst.inst, opr: (opr_val&0xF)};
-        m_insts.push(m_inst_pfix1);
-        m_insts.push(m_inst_pfix2);
-        m_insts.push(m_inst_pfix3);
-        m_insts.push(m_inst);
-      } else {
-        reportError("Error with "+ inst.inst + " " + inst.opr+ ". Has to jump too far. Something probably went wrong.");
-        return;
+    var memstring = "";
+    var i;
+    for (i = 0; i < m_insts.length-1; i += 2) {
+      var m_inst_low = m_insts[i];
+      var m_inst_hi = m_insts[i+1];
+      var byte_low = getByteCode(m_inst_low);
+      var byte_hi = getByteCode(m_inst_hi);
+      var word = byte_low + (byte_hi<<8);
+      memstring += hex_16bit(word);
+      memstring += " ";
+      if ((i % 32 == 31)) {
+          memstring += "\n";
       }
     }
-    count += inst.len;
-  }
-
-
-
-  var memstring = "";
-  var i;
-  for (i = 0; i < m_insts.length-1; i += 2) {
-    var m_inst_low = m_insts[i];
-    var m_inst_hi = m_insts[i+1];
-    var byte_low = getByteCode(m_inst_low);
-    var byte_hi = getByteCode(m_inst_hi);
-    var word = byte_low + (byte_hi<<8);
-    memstring += hex_16bit(word);
-    memstring += " ";
-    if ((i % 32 == 31)) {
-        memstring += "\n";
+    var num_words = i>>1;
+    if (m_insts.length % 2 == 1) {
+      var m_inst_low = m_insts[i];
+      var byte_low = getByteCode(m_inst_low);
+      var word = byte_low;
+      memstring += hex_16bit(word);
+      memstring += " ";
+      num_words++;
     }
-  }
-  var num_words = i>>1;
-  if (m_insts.length % 2 == 1) {
-    var m_inst_low = m_insts[i];
-    var byte_low = getByteCode(m_inst_low);
-    var word = byte_low;
-    memstring += hex_16bit(word);
-    memstring += " ";
-    num_words++;
-  }
 
-  for (; num_words < sizeOfMem; num_words++){
-    memstring += "0000 ";
-    if ((num_words % 16 == 15)) {
-        memstring += "\n";
+    for (; num_words < sizeOfMem; num_words++){
+      memstring += "0000 ";
+      if ((num_words % 16 == 15)) {
+          memstring += "\n";
+      }
     }
-  }
 
-  $("#memory_editor").val(memstring);
-
+    $("#memory_editor").val(memstring);
 }
 
-function getByteCode(inst) {
-  switch(inst.inst) {
-    case "PADDING":
-      return 0;
-      break;
-    case "DATA":
-      return inst.opr;
-      break;
-    case "LDAM":
-      return (0<<4) + inst.opr;
-      break;
-    case "LDBM":
-      return (1<<4) + inst.opr;
-      break;
-    case "STAM":
-      return (2<<4) + inst.opr;
-      break;
-    case "LDAC":
-      return (3<<4) + inst.opr;
-      break;
-    case "LDBC":
-      return (4<<4) + inst.opr;
-      break;
-    case "LDAP":
-      return (5<<4) + inst.opr;
-        break;
-    case "LDAI":
-      return (6<<4) + inst.opr;
-      break;
-    case "LDBI":
-      return (7<<4) + inst.opr;
-      break;
-    case "STAI":
-      return (8<<4) + inst.opr;
-      break;
-    case "BR":
-      return (9<<4) + inst.opr;
-      break;
-    case "BRZ":
-      return (10<<4) + inst.opr;
-      break;
-    case "BRN":
-      return (11<<4) + inst.opr;
-      break;
-    case "BRB":
-      return (12<<4) + inst.opr;
-      break;
-    case "OPR":
-      return (13<<4) + inst.opr;
-      break;
-    case "PFIX":
-      return (14<<4) + inst.opr;
-      break;
-    case "NFIX":
-      return (15<<4) + inst.opr;
-      break;
-  }
-}
-
-function rescanLabels(labelpos, insts) {
-  var count = 0;
-  for (var i in insts) {
-    var inst = insts[i]
-    for (var j in inst.labels) {
-      labelpos.set(inst.labels[j], count);
-    }
-    count += inst.len;
-  }
-}
-
-function convertToList(assembly) {
-  var insts = [];
-  var line = 0;
-  var i = 0;
-  while (i < assembly.length) {
-    inst = {};
-    var ch = assembly[i];
-    if (ch == '\n') {
-      i++;
-      ch = assembly[i];
-      line++;
-    } else if (ch == '-') {
-      i++;
-      ch = assembly[i];
-      while( ch != '\n' ) {
-        i++;
-        ch = assembly[i];
-      }
-      i++;
-      ch = assembly[i];
-      line++;
-    } else if (ch == 'L') {
-
-      inst.labels = [];
-      while (ch == 'L') {
-        var labelString = "";
-        labelString += ch;
-        i++;
-        ch = assembly[i];
-        while (ch != '\n') {
-          if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");return null;}
-          labelString += ch;
-          i++;
-          ch = assembly[i];
-        }
-        line++;
-        i++;
-        ch = assembly[i];
-        inst.labels.push(labelString);
-      }
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var instString = "";
-      while( ch != ' ') {
-        instString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      inst.inst = instString;
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var oprString = "";
-      while( ch != '\n' ) {
-        oprString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      if (oprString[0] == '0' && oprString[1] == 'x') {
-        var tmp = parseInt(oprString);
-        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
-        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
-        oprString = String(tmp);
-      }
-      inst.opr = oprString;
-      insts.push(inst);
-      i++;
-      line++;
-    } else if (ch == ' ') {
-      inst.labels = []
-      i++;
-      ch = assembly[i];
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var instString = "";
-      while( ch != ' ') {
-        instString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      inst.inst = instString;
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var oprString = "";
-      while( ch != '\n' ) {
-        oprString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      if (oprString[0] == '0' && oprString[1] == 'x') {
-        var tmp = parseInt(oprString);
-        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
-        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
-        oprString = String(tmp);
-      }
-      inst.opr = oprString;
-      insts.push(inst);
-      i++;
-      line++;
-    } else {
-      reportError("Error on line "+ line +".");
-      return null;
-    }
-  }
-  return insts;
-}
 
 
 // current delay.
@@ -1000,7 +602,7 @@ $(function(){
 
     $("#edityes").click(memedit_accept);
     $("#editno").click(memedit_cancel);
-    $("#assemble").click(assemble);
+    $("#assemble").click(assembler_wrapper);
 
     $("#messages").hide();
     $("#clearmessage").click(function() {$("#messages").hide()});
