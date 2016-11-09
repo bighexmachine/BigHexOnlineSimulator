@@ -325,7 +325,7 @@ function rescanLabels(labelpos, insts) {
       if (inst.labels[j].forcedAddresString == null) {
         labelpos.set(inst.labels[j].labelString, count);
       } else {
-        var addr = parseInt(inst.labels[j].forcedAddresString);
+        var addr = parseInt(inst.labels[j].forcedAddresString)*2;
         if (addr < count) {
           if(insts[i-1].inst == "PADDING" && insts[i-1].len >= count - addr) {
             insts[i-1].len -= count - addr;
@@ -357,7 +357,7 @@ function scanLabels(labelpos, insts) {
       if (inst.labels[j].forcedAddresString == null) {
         labelpos.set(inst.labels[j].labelString, count);
       } else {
-        var addr = parseInt(inst.labels[j].forcedAddresString);
+        var addr = parseInt(inst.labels[j].forcedAddresString)*2;
         if( isNaN(addr)) {reportError("Address for label: "+ inst.labels[j].labelString + " is not valid. (only decimal or hex addr allowed)");assert(false);}
         if ( inst.inst == "DATA" && addr%2 == 1) {reportError("DATA region cannot be set to "+ addr + ", since it not word aligned. (not a multiple of 2)");assert(false);}
         if (addr < count) {reportError("Specified address for label "+inst.labels[j].labelString+" is too small so would overwrite existing code."); assert(false); }
