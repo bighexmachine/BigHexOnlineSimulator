@@ -19,6 +19,7 @@ function is_byte(b) {
 
 var HEX = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
 
+var INSTS = ["DATA", "LDAI", "LDBI", "STAI", "BRB", "OPR", "LDAM", "LDBM", "STAM", "LDAC", "LDBC", "BR", "BRZ", "BRN", "LDAP"];
 
 function hex_byte(i) {
     if (is_byte(i) == false){
@@ -39,7 +40,11 @@ var reportError = function () {}
 
 function assemble(assembly, errorFunction) {
   reportError = errorFunction;
-  insts = convertToList(assembly);
+  assembly_tokens = convertToTokens(assembly);
+  console.log(assembly_tokens);
+  //throw "don't do the rest yet";
+  insts = convertToList(assembly_tokens);
+  console.log(insts);
   //set up length of instructions with static length
   for (var i in insts) {
     var inst = insts[i];
@@ -354,7 +359,7 @@ function scanLabels(labelpos, insts) {
   for (var i in insts) {
     var inst = insts[i]
     for (var j in inst.labels) {
-      if (inst.labels[j].forcedAddresString == null) {
+      if (inst.labels[j].forcedAddresString == null || inst.labels[j].forcedAddresString == "") {
         labelpos.set(inst.labels[j].labelString, count);
       } else {
         var addr = parseInt(inst.labels[j].forcedAddresString)*2;
@@ -374,130 +379,99 @@ function scanLabels(labelpos, insts) {
   return new_insts;
 }
 
-function convertToList(assembly) {
-  var insts = [];
-  var line = 0;
+function convertToTokens(assembly)
+{
+  var tokens = [];
+  var line = 1;
   var i = 0;
-  while (i < assembly.length) {
-    inst = {};
+  while (i < assembly.length)
+  {
     var ch = assembly[i];
     if (ch == '\n') {
+      tokens.push(ch);
       i++;
       ch = assembly[i];
       line++;
-    } else if (ch == '-') {
+    } else if (ch == '#') {
       i++;
       ch = assembly[i];
       while( ch != '\n' ) {
         i++;
         ch = assembly[i];
       }
-      i++;
-      ch = assembly[i];
-      line++;
-    } else if (ch == 'L') {
-
-      inst.labels = [];
-      while (ch == 'L') {
-        var label = {};
-        label.labelString = "";
-        label.labelString += ch;
-        i++;
-        ch = assembly[i];
-        while (ch != '\n') {
-          if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");return null;}
-          if(ch == ':') {
-            i++;
-            ch = assembly[i];
-            label.forcedAddresString = "";
-            while (ch != '\n'){
-              if (ch == ' ') {reportError("Space in label (maybe at the end) on line "+ line +".");return null;}
-              label.forcedAddresString += ch;
-              i++;
-              ch = assembly[i];
-            }
-            if(label.forcedAddresString == "") {reportError("Label on line "+ line +" has colon but no address.");return null;}
-          } else {
-            label.labelString += ch;
-            i++;
-            ch = assembly[i];
-          }
-        }
-        line++;
-        i++;
-        ch = assembly[i];
-        inst.labels.push(label);
-      }
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var instString = "";
-      while( ch != ' ') {
-        instString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      inst.inst = instString;
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var oprString = "";
-      while( ch != '\n' ) {
-        oprString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      if (oprString[0] == '0' && oprString[1] == 'x') {
-        var tmp = parseInt(oprString);
-        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
-        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
-        oprString = String(tmp);
-      }
-      inst.opr = oprString;
-      insts.push(inst);
-      i++;
-      line++;
-    } else if (ch == ' ') {
-      inst.labels = []
-      i++;
-      ch = assembly[i];
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var instString = "";
-      while( ch != ' ') {
-        instString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      inst.inst = instString;
-      while ( ch == ' ') {
-        i++;
-        ch = assembly[i];
-      }
-      var oprString = "";
-      while( ch != '\n' ) {
-        oprString += ch;
-        i++;
-        ch = assembly[i];
-      }
-      if (oprString[0] == '0' && oprString[1] == 'x') {
-        var tmp = parseInt(oprString);
-        if (isNaN(tmp)) {reportError("Error on line "+ line +". "+oprString+" is not a number."); return null;}
-        if (tmp >= 0x8000) {tmp = tmp - 0x10000;}
-        oprString = String(tmp);
-      }
-      inst.opr = oprString;
-      insts.push(inst);
-      i++;
-      line++;
     } else {
-      reportError("Error on line "+ line +".");
-      return null;
+      //throw away leading spaces
+      while (ch == ' ') { i++; ch = assembly[i]; }
+      //deal with lines with just spaces
+      if(ch == '\n') {
+        tokens.push(ch);
+        continue;
+      }
+
+      token = "";
+      while(!/[^a-zA-Z0-9_-]/.test(ch)) {
+        token += ch;
+        i++;
+        ch = assembly[i];
+      }
+      tokens.push(token);
+      while (ch == ' ') { i++; ch = assembly[i]; }
+      while(/[^a-zA-Z0-9_-]/.test(ch) && ch != ' ') {
+        tokens.push(ch);
+        i++;
+        ch = assembly[i];
+      }
+      while (ch == ' ') { i++; ch = assembly[i]; }
     }
+  }
+  return tokens;
+}
+
+function convertToList(assembly) {
+  var insts = [];
+  var line = 1;
+  var i = 0;
+  var current_inst = {};
+  current_inst.labels = [];
+  while (i < assembly.length) {
+
+    if(assembly[i] == "\n")
+    {
+      line++;
+      i++;
+    }
+    else if(i + 1 < assembly.length && assembly[i+1] == ":")
+    {
+      current_inst.labels.push( {line: line, labelString: assembly[i] , forcedAddresString: ""} );
+      i+=2;
+    }
+    else if(i + 4 < assembly.length && assembly[i+1] == "[" && assembly[i+3] == "]" && assembly[i+4] == ":")
+    {
+      current_inst.labels.push( {line: line, labelString: assembly[i] , forcedAddresString: assembly[i+2] } );
+      i+=5;
+    }
+    else if(i + 2 < assembly.length && INSTS.indexOf(assembly[i]) != -1 && assembly[i+2] == "\n")
+    {
+      current_inst.line = line;
+      current_inst.inst = assembly[i];
+      current_inst.opr = assembly[i+1];
+      insts.push(current_inst);
+      current_inst = {};
+      current_inst.labels = [];
+      i+=2;
+    }
+    else if(i + 2 < assembly.length && INSTS.indexOf(assembly[i]) != -1 && assembly[i+2] == "\n")
+    {
+      reportError("Error on line "+line+", Instruction does not end with a new line."); assert(false);
+    }
+    else
+    {
+      reportError("Error on line "+line+", bad label or instruction format."); assert(false);
+    }
+  }
+  if(current_inst.labels.length != 0)
+  {
+    reportError("Error on line "+line+", label without an instruction."); assert(false);
   }
   return insts;
 }
