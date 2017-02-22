@@ -388,11 +388,13 @@ function convertToTokens(assembly)
   {
     var ch = assembly[i];
     if (ch == '\n') {
+      console.log("newline");
       tokens.push(ch);
       i++;
       ch = assembly[i];
       line++;
     } else if (ch == '#') {
+      console.log("comment");
       i++;
       ch = assembly[i];
       while( ch != '\n' ) {
@@ -400,6 +402,7 @@ function convertToTokens(assembly)
         ch = assembly[i];
       }
     } else {
+      console.log("else '" + ch + "'");
       //throw away leading spaces
       while (ch == ' ') { i++; ch = assembly[i]; }
       //deal with lines with just spaces
@@ -416,7 +419,7 @@ function convertToTokens(assembly)
       }
       tokens.push(token);
       while (ch == ' ') { i++; ch = assembly[i]; }
-      while(/[^a-zA-Z0-9_-]/.test(ch) && ch != ' ') {
+      while(/[^a-zA-Z0-9_-]/.test(ch) && ch != ' ' && ch != '\n') {
         tokens.push(ch);
         i++;
         ch = assembly[i];
